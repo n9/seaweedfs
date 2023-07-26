@@ -98,14 +98,17 @@ func (ms *MasterServer) LookupVolume(ctx context.Context, req *master_pb.LookupV
 				})
 			}
 			var auth string
+			var authRead string
 			if commaSep > 0 { // this is a file id
 				auth = string(security.GenJwtForVolumeServer(ms.guard.SigningKey, ms.guard.ExpiresAfterSec, result.VolumeOrFileId))
+				authRead = string(security.GenJwtForVolumeServer(ms.guard.ReadSigningKey, ms.guard.ExpiresAfterSec, result.VolumeOrFileId))
 			}
 			resp.VolumeIdLocations = append(resp.VolumeIdLocations, &master_pb.LookupVolumeResponse_VolumeIdLocation{
 				VolumeOrFileId: result.VolumeOrFileId,
 				Locations:      locations,
 				Error:          result.Error,
 				Auth:           auth,
+				AuthRead:       authRead,
 			})
 		}
 	}

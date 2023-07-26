@@ -184,6 +184,7 @@ message LookupVolumeResponse {
     repeated Location locations = 2;
     string error = 3;
     string auth = 4;
+    string authRead = 5;
   }
   repeated VolumeIdLocation volume_id_locations = 1;
 }
