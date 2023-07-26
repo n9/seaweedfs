@@ -3,12 +3,13 @@ package wdclient
 import (
 	"errors"
 	"fmt"
-	"github.com/seaweedfs/seaweedfs/weed/pb"
 	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/seaweedfs/seaweedfs/weed/pb"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 )
@@ -21,7 +22,13 @@ type HasLookupFileIdFunction interface {
 	GetLookupFileIdFunction() LookupFileIdFunctionType
 }
 
-type LookupFileIdFunctionType func(fileId string) (targetUrls []string, err error)
+type TargetUrlWithAuth struct {
+	Url      string
+	Auth     string
+	AuthRead string
+}
+
+type LookupFileIdFunctionType func(fileId string) (targetUrls []TargetUrlWithAuth, err error)
 
 type Location struct {
 	Url        string `json:"url,omitempty"`

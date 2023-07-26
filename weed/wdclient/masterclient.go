@@ -56,7 +56,7 @@ func (mc *MasterClient) GetLookupFileIdFunction() LookupFileIdFunctionType {
 	return mc.LookupFileIdWithFallback
 }
 
-func (mc *MasterClient) LookupFileIdWithFallback(fileId string) (fullUrls []string, err error) {
+func (mc *MasterClient) LookupFileIdWithFallback(fileId string) (fullUrls []TargetUrlWithAuth, err error) {
 	fullUrls, err = mc.vidMap.LookupFileId(fileId)
 	if err == nil && len(fullUrls) > 0 {
 		return
