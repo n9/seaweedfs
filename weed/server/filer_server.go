@@ -202,7 +202,9 @@ func (fs *FilerServer) checkWithMaster() {
 			if readErr == nil {
 				isConnected = true
 			} else {
-				time.Sleep(7 * time.Second)
+				secondsToSleep := 7
+				glog.V(4).Infof("cannot connect to master %s: %v -- will retry after %d seconds", master, readErr, secondsToSleep)
+				time.Sleep(time.Duration(secondsToSleep) * time.Second)
 			}
 		}
 	}
