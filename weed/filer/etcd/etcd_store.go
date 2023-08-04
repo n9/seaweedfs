@@ -57,23 +57,34 @@ func (store *EtcdStore) Initialize(configuration weed_util.Configuration, prefix
 
 	store.timeout = timeout
 
+	tlsConfig := &tls.Config{}
+
 	caFile := configuration.GetString(prefix + "cafile")
-
-	tls := &tls.Config{}
-
 	if caFile != "" {
-		tls.RootCAs, err = security.LoadCertsFromPEM(caFile)
+		tlsConfig.RootCAs, err = security.LoadCertsFromPEM(caFile)
 		if err != nil {
 			return fmt.Errorf("parse etcd cafile: %v", err)
 		}
 	}
 
+	clientKeyFile := configuration.GetString(prefix + "client_keyfile")
+	clientCrtFile := configuration.GetString(prefix + "client_crtfile")
+	if clientKeyFile != "" || clientCrtFile != "" {
+		tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(clientCrtFile, clientKeyFile)
+			if err != nil {
+				return nil, err
+			}
+			return &cert, nil
+		}
+	}
+
 	glog.Infof("filer store etcd: %s", servers)
 
-	return store.initialize(servers, username, password, timeout, tls)
+	return store.initialize(servers, username, password, timeout, tlsConfig)
 }
 
-func (store *EtcdStore) initialize(servers string, username string, password string, timeout time.Duration, tls *tls.Config) (err error) {
+func (store *EtcdStore) initialize(servers string, username string, password string, timeout time.Duration, tlsConfig *tls.Config) (err error) {
 	glog.Infof("filer store etcd: %s", servers)
 
 	store.client, err = clientv3.New(clientv3.Config{
@@ -81,7 +92,7 @@ func (store *EtcdStore) initialize(servers string, username string, password str
 		Username:    username,
 		Password:    password,
 		DialTimeout: timeout,
-		TLS:         tls,
+		TLS:         tlsConfig,
 	})
 	if err != nil {
 		return fmt.Errorf("connect to etcd %s: %s", servers, err)
