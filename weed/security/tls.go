@@ -4,12 +4,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/credentials/tls/certprovider/pemfile"
-	"google.golang.org/grpc/security/advancedtls"
 	"os"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials/tls/certprovider/pemfile"
+	"google.golang.org/grpc/security/advancedtls"
 
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/util"
@@ -138,15 +139,24 @@ func LoadClientTLS(config *util.ViperProxy, component string) grpc.DialOption {
 	return grpc.WithTransportCredentials(ta)
 }
 
-func LoadClientTLSHTTP(clientCertFile string) *tls.Config {
-	clientCerts, err := os.ReadFile(clientCertFile)
+func LoadCertsFromPEM(path string) (*x509.CertPool, error) {
+	clientCerts, err := os.ReadFile(path)
 	if err != nil {
-		glog.Fatal(err)
+		return nil, err
 	}
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM(clientCerts)
 	if !ok {
-		glog.Fatalf("Error processing client certificate in %s\n", clientCertFile)
+		return nil, fmt.Errorf("error parsing certificate from %s", path)
+	}
+
+	return certPool, nil
+}
+
+func LoadClientTLSHTTP(clientCertFile string) *tls.Config {
+	certPool, err := LoadCertsFromPEM(clientCertFile)
+	if err != nil {
+		glog.Fatal(fmt.Errorf("error processing client certificate: %v", err))
 	}
 
 	return &tls.Config{

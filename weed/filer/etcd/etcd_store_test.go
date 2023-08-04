@@ -1,8 +1,10 @@
 package etcd
 
 import (
-	"github.com/seaweedfs/seaweedfs/weed/filer/store_test"
 	"testing"
+	"time"
+
+	"github.com/seaweedfs/seaweedfs/weed/filer/store_test"
 )
 
 func TestStore(t *testing.T) {
@@ -10,7 +12,7 @@ func TestStore(t *testing.T) {
 	// to set up local env
 	if false {
 		store := &EtcdStore{}
-		store.initialize("localhost:2379", "", "", "3s")
+		store.initialize("localhost:2379", "", "", 3*time.Second, nil)
 		store_test.TestFilerStore(t, store)
 	}
 }

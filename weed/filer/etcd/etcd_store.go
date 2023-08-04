@@ -3,15 +3,17 @@ package etcd
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"strings"
 	"time"
 
-	"go.etcd.io/etcd/client/v3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/seaweedfs/seaweedfs/weed/filer"
 	"github.com/seaweedfs/seaweedfs/weed/glog"
 	"github.com/seaweedfs/seaweedfs/weed/pb/filer_pb"
+	"github.com/seaweedfs/seaweedfs/weed/security"
 	weed_util "github.com/seaweedfs/seaweedfs/weed/util"
 )
 
@@ -24,8 +26,9 @@ func init() {
 }
 
 type EtcdStore struct {
-	client *clientv3.Client
+	client        *clientv3.Client
 	etcdKeyPrefix string
+	timeout       time.Duration
 }
 
 func (store *EtcdStore) GetName() string {
@@ -38,31 +41,47 @@ func (store *EtcdStore) Initialize(configuration weed_util.Configuration, prefix
 		servers = "localhost:2379"
 	}
 
-        username := configuration.GetString(prefix + "username")
-        password := configuration.GetString(prefix + "password")
-        store.etcdKeyPrefix = configuration.GetString(prefix + "key_prefix")
+	username := configuration.GetString(prefix + "username")
+	password := configuration.GetString(prefix + "password")
+	store.etcdKeyPrefix = configuration.GetString(prefix + "key_prefix")
 
-	timeout := configuration.GetString(prefix + "timeout")
-	if timeout == "" {
-		timeout = "3s"
+	textTimeout := configuration.GetString(prefix + "timeout")
+	if textTimeout == "" {
+		textTimeout = "3s"
 	}
 
-	return store.initialize(servers, username, password, timeout)
-}
+	timeout, err := time.ParseDuration(textTimeout)
+	if err != nil {
+		return fmt.Errorf("parse etcd store timeout %s: %s", timeout, err)
+	}
 
-func (store *EtcdStore) initialize(servers string, username string, password string, timeout string) (err error) {
+	store.timeout = timeout
+
+	caFile := configuration.GetString(prefix + "cafile")
+
+	tls := &tls.Config{}
+
+	if caFile != "" {
+		tls.RootCAs, err = security.LoadCertsFromPEM(caFile)
+		if err != nil {
+			return fmt.Errorf("parse etcd cafile: %v", err)
+		}
+	}
+
 	glog.Infof("filer store etcd: %s", servers)
 
-	to, err := time.ParseDuration(timeout)
-	if err != nil {
-		return fmt.Errorf("parse timeout %s: %s", timeout, err)
-	}
+	return store.initialize(servers, username, password, timeout, tls)
+}
+
+func (store *EtcdStore) initialize(servers string, username string, password string, timeout time.Duration, tls *tls.Config) (err error) {
+	glog.Infof("filer store etcd: %s", servers)
 
 	store.client, err = clientv3.New(clientv3.Config{
 		Endpoints:   strings.Split(servers, ","),
 		Username:    username,
 		Password:    password,
-		DialTimeout: to,
+		DialTimeout: timeout,
+		TLS:         tls,
 	})
 	if err != nil {
 		return fmt.Errorf("connect to etcd %s: %s", servers, err)
@@ -93,7 +112,10 @@ func (store *EtcdStore) InsertEntry(ctx context.Context, entry *filer.Entry) (er
 		meta = weed_util.MaybeGzipData(meta)
 	}
 
-	if _, err := store.client.Put(ctx, store.etcdKeyPrefix + string(key), string(meta)); err != nil {
+	ctx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+
+	if _, err := store.client.Put(ctx, store.etcdKeyPrefix+string(key), string(meta)); err != nil {
 		return fmt.Errorf("persisting %s : %v", entry.FullPath, err)
 	}
 
@@ -107,7 +129,10 @@ func (store *EtcdStore) UpdateEntry(ctx context.Context, entry *filer.Entry) (er
 func (store *EtcdStore) FindEntry(ctx context.Context, fullpath weed_util.FullPath) (entry *filer.Entry, err error) {
 	key := genKey(fullpath.DirAndName())
 
-	resp, err := store.client.Get(ctx, store.etcdKeyPrefix + string(key))
+	ctx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+
+	resp, err := store.client.Get(ctx, store.etcdKeyPrefix+string(key))
 	if err != nil {
 		return nil, fmt.Errorf("get %s : %v", fullpath, err)
 	}
@@ -130,7 +155,10 @@ func (store *EtcdStore) FindEntry(ctx context.Context, fullpath weed_util.FullPa
 func (store *EtcdStore) DeleteEntry(ctx context.Context, fullpath weed_util.FullPath) (err error) {
 	key := genKey(fullpath.DirAndName())
 
-	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix + string(key)); err != nil {
+	ctx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+
+	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix+string(key)); err != nil {
 		return fmt.Errorf("delete %s : %v", fullpath, err)
 	}
 
@@ -140,7 +168,10 @@ func (store *EtcdStore) DeleteEntry(ctx context.Context, fullpath weed_util.Full
 func (store *EtcdStore) DeleteFolderChildren(ctx context.Context, fullpath weed_util.FullPath) (err error) {
 	directoryPrefix := genDirectoryKeyPrefix(fullpath, "")
 
-	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix + string(directoryPrefix), clientv3.WithPrefix()); err != nil {
+	ctx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+
+	if _, err := store.client.Delete(ctx, store.etcdKeyPrefix+string(directoryPrefix), clientv3.WithPrefix()); err != nil {
 		return fmt.Errorf("deleteFolderChildren %s : %v", fullpath, err)
 	}
 
@@ -158,7 +189,10 @@ func (store *EtcdStore) ListDirectoryEntries(ctx context.Context, dirPath weed_u
 		lastFileStart = genDirectoryKeyPrefix(dirPath, startFileName)
 	}
 
-	resp, err := store.client.Get(ctx, store.etcdKeyPrefix + string(lastFileStart),
+	ctx, cancel := context.WithTimeout(ctx, store.timeout)
+	defer cancel()
+
+	resp, err := store.client.Get(ctx, store.etcdKeyPrefix+string(lastFileStart),
 		clientv3.WithFromKey(), clientv3.WithLimit(limit+1))
 	if err != nil {
 		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
