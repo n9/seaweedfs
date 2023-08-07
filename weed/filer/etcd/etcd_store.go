@@ -1,7 +1,6 @@
 package etcd
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -204,15 +203,12 @@ func (store *EtcdStore) ListDirectoryEntries(ctx context.Context, dirPath weed_u
 	defer cancel()
 
 	resp, err := store.client.Get(ctx, store.etcdKeyPrefix+string(lastFileStart),
-		clientv3.WithFromKey(), clientv3.WithLimit(limit+1))
+		clientv3.WithRange(clientv3.GetPrefixRangeEnd(store.etcdKeyPrefix+string(directoryPrefix))), clientv3.WithLimit(limit+1))
 	if err != nil {
 		return lastFileName, fmt.Errorf("list %s : %v", dirPath, err)
 	}
 
 	for _, kv := range resp.Kvs {
-		if !bytes.HasPrefix(kv.Key, directoryPrefix) {
-			break
-		}
 		fileName := getNameFromKey(kv.Key)
 		if fileName == "" {
 			continue
